@@ -12,7 +12,33 @@ HSV_COLOR_RANGES = {
     "black  ": [(0, 0, 0), (180, 70, 40)]
 }
 
-# Your existing detect_color and find_bounding_box_for_colors functions remain the same
+def find_bounding_box_for_colors(image):
+    """
+    Create a combined mask of all colors, then find the minimal bounding rectangle 
+    covering all detected color pixels.
+    """
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    # Combine all color masks
+    combined_mask = None
+    for color, (lower, upper) in HSV_COLOR_RANGES.items():
+        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
+        if combined_mask is None:
+            combined_mask = mask
+        else:
+            combined_mask = cv2.bitwise_or(combined_mask, mask)
+    
+    # If no colors are found, default to full image
+    if combined_mask is None or cv2.countNonZero(combined_mask) == 0:
+        return 0, 0, image.shape[1], image.shape[0]
+    # Find all non-zero points in combined_mask
+    pts = cv2.findNonZero(combined_mask)
+    if pts is None:
+        # No colored objects found
+        return 0, 0, image.shape[1], image.shape[0]
+    # Get bounding rectangle of all colored points
+    x, y, w, h = cv2.boundingRect(pts)
+    return x, y, w, h
 
 def process_frame(frame, grid_size=(5, 5)):
     """
