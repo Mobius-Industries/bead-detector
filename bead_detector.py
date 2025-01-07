@@ -12,6 +12,37 @@ HSV_COLOR_RANGES = {
     "black  ": [(0, 0, 0), (180, 70, 40)]
 }
 
+def detect_color(cell):
+    """
+    Detect the dominant color in a cell using HSV color thresholds,
+    only considering the middle 50% of the cell.
+    """
+    height, width = cell.shape[:2]
+    
+    # Calculate the boundaries for the middle 50%
+    x_start = width // 4
+    x_end = width - (width // 4)
+    y_start = height // 4
+    y_end = height - (height // 4)
+    
+    # Extract the middle portion of the cell
+    middle_portion = cell[y_start:y_end, x_start:x_end]
+    
+    # Convert to HSV
+    hsv = cv2.cvtColor(middle_portion, cv2.COLOR_BGR2HSV)
+    
+    best_color = "unknown"
+    max_pixels = 0
+    
+    for color, (lower, upper) in HSV_COLOR_RANGES.items():
+        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
+        pixels = cv2.countNonZero(mask)
+        if pixels > max_pixels:
+            max_pixels = pixels
+            best_color = color.strip()
+            
+    return best_color
+
 def find_bounding_box_for_colors(image):
     """
     Create a combined mask of all colors, then find the minimal bounding rectangle 
