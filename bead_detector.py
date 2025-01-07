@@ -1,108 +1,86 @@
 import cv2
 import numpy as np
 
-# Define HSV ranges for each color and their shadow variations if needed
+# Define HSV ranges for each color
 HSV_COLOR_RANGES = {
-    "red    ": [(0, 70, 50), (10, 255, 255)],
-    # "red_sh ": [(160, 50, 50), (180, 255, 150)],
-    "blue   ": [(90, 50, 50), (140, 255, 255)],
-    "green  ": [(40, 50, 50), (85, 255, 255)],
-    "yellow ": [(20, 70, 70), (35, 255, 255)],
-    "black  ": [(0, 0, 0), (180, 70, 40)]
+    "red": [ (0, 70, 50), (10, 255, 255), (170, 70, 50), (180, 255, 255) ],
+    "purple": [ (130, 50, 50), (160, 255, 255) ],
+    "blue": [ (100, 50, 50), (140, 255, 255) ],
+    "green": [ (40, 50, 50), (85, 255, 255) ],
+    "yellow": [ (20, 70, 70), (35, 255, 255) ],
+    "black": [ (0, 0, 0), (180, 20, 40) ]
 }
 
-# def detect_color(cell):
-#     """
-#     Detect the dominant color in a cell using HSV color thresholds.
-#     """
-#     hsv = cv2.cvtColor(cell, cv2.COLOR_BGR2HSV)
-#     best_color = "unknown"
-#     max_pixels = 0
-#     for color, (lower, upper) in HSV_COLOR_RANGES.items():
-#         mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
-#         pixels = cv2.countNonZero(mask)
-#         if pixels > max_pixels:
-#             max_pixels = pixels
-#             best_color = color.strip()
-#     return best_color
-
-
 def detect_color(cell):
-    """
-    Detect the dominant color in a cell using HSV color thresholds,
-    only considering the middle 50% of the cell.
-    """
-    height, width = cell.shape[:2]
-    
-    # Calculate the boundaries for the middle 50%
-    x_start = width // 4
-    x_end = width - (width // 4)
-    y_start = height // 4
-    y_end = height - (height // 4)
-    
-    # Extract the middle portion of the cell
-    middle_portion = cell[y_start:y_end, x_start:x_end]
+    # Apply Gaussian blur to reduce noise
+    cell = cv2.GaussianBlur(cell, (5,5), 0)
     
     # Convert to HSV
-    hsv = cv2.cvtColor(middle_portion, cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(cell, cv2.COLOR_BGR2HSV)
     
-    best_color = "unknown"
-    max_pixels = 0
+    # Initialize a mask to keep track of assigned pixels
+    mask_assigned = np.zeros_like(hsv[:, :, 0], dtype=np.uint8)
     
-    for color, (lower, upper) in HSV_COLOR_RANGES.items():
-        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
-        pixels = cv2.countNonZero(mask)
-        if pixels > max_pixels:
-            max_pixels = pixels
-            best_color = color.strip()
-            
-    return best_color
-
-
-def find_bounding_box_for_colors(image):
-    """
-    Create a combined mask of all colors, then find the minimal bounding rectangle 
-    covering all detected color pixels.
-    """
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    # Color priority list
+    color_priority = [
+        ('red', HSV_COLOR_RANGES["red"]),
+        ('purple', HSV_COLOR_RANGES["purple"]),
+        ('blue', HSV_COLOR_RANGES["blue"]),
+        ('green', HSV_COLOR_RANGES["green"]),
+        ('yellow', HSV_COLOR_RANGES["yellow"]),
+        ('black', HSV_COLOR_RANGES["black"])
+    ]
     
-    # Combine all color masks
-    combined_mask = None
-    for color, (lower, upper) in HSV_COLOR_RANGES.items():
-        mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
-        if combined_mask is None:
-            combined_mask = mask
+    # Dictionary to hold pixel counts for each color
+    color_counts = {color: 0 for color, _ in color_priority}
+    
+    for color, ranges in color_priority:
+        if len(ranges) == 4:
+            # Red has two ranges
+            lower1 = np.array(ranges[0])
+            upper1 = np.array(ranges[1])
+            lower2 = np.array(ranges[2])
+            upper2 = np.array(ranges[3])
+            mask1 = cv2.inRange(hsv, lower1, upper1)
+            mask2 = cv2.inRange(hsv, lower2, upper2)
+            mask = cv2.bitwise_or(mask1, mask2)
         else:
-            combined_mask = cv2.bitwise_or(combined_mask, mask)
+            lower = np.array(ranges[0])
+            upper = np.array(ranges[1])
+            mask = cv2.inRange(hsv, lower, upper)
+        
+        # Exclude pixels already assigned
+        mask_unassigned = cv2.bitwise_and(mask, cv2.bitwise_not(mask_assigned))
+        
+        # Count pixels for this color
+        color_counts[color] += cv2.countNonZero(mask_unassigned)
+        
+        # Assign these pixels to avoid double-counting
+        mask_assigned = cv2.bitwise_or(mask_assigned, mask_unassigned)
     
-    # If no colors are found, default to full image
-    if combined_mask is None or cv2.countNonZero(combined_mask) == 0:
-        return 0, 0, image.shape[1], image.shape[0]
-
-    # Find all non-zero points in combined_mask
-    pts = cv2.findNonZero(combined_mask)
-    if pts is None:
-        # No colored objects found
-        return 0, 0, image.shape[1], image.shape[0]
-
-    # Get bounding rectangle of all colored points
-    x, y, w, h = cv2.boundingRect(pts)
-    return x, y, w, h
+    # Determine the dominant color
+    dominant_color = max(color_counts, key=color_counts.get)
+    
+    return dominant_color
 
 def process_grid(image_path, grid_size=(5, 5)):
     """
-    Detect the colors in a grid image by:
-    - Finding all colors first
-    - Determining bounding box that covers all colorful objects
-    - Dividing that bounding box into a grid and detecting colors
+    Detect the colors in a grid image using a hard-coded grid position.
     """
     image = cv2.imread(image_path)
     if image is None:
         raise ValueError("Image not found or cannot be opened")
 
-    # Determine bounding box that covers all colored regions
-    x, y, w, h = find_bounding_box_for_colors(image)
-    
+    # Hard-coded grid position and size based on pixel values
+    x = 500  # Starting x-coordinate of the grid
+    y = 150  # Starting y-coordinate of the grid
+    w = 800  # Width of the grid
+    h = 650  # Height of the grid
+
+    # Ensure the grid region is within the image boundaries
+    if x < 0 or y < 0 or x + w > image.shape[1] or y + h > image.shape[0]:
+        raise ValueError("Grid coordinates are out of image bounds")
+
     # Compute cell dimensions
     cell_height = h // grid_size[0]
     cell_width = w // grid_size[1]
@@ -139,11 +117,11 @@ def display_results(grid_colors, image_path):
     print("\n")
 
 def main():
-    image_path = "img/refined_1.jpeg"  # Replace with your image path
+    image_path = "noice1.jpg"  # Replace with your image path
     grid_colors, visualized_image = process_grid(image_path, grid_size=(5, 5))
     display_results(grid_colors, image_path)
     
-    cv2.imshow("Detected Grid11111", visualized_image)
+    cv2.imshow("Detected Grid", visualized_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
