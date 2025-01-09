@@ -5,30 +5,41 @@ import numpy as np
 HSV_COLOR_RANGES = {
     "red": [(0, 70, 50), (10, 255, 255), (170, 70, 50), (180, 255, 255)],
     "purple": [(130, 50, 50), (160, 255, 255)],
-    "blue": [(100, 50, 50), (140, 255, 255)],  # Adjusted blue range
+    "blue": [(100, 50, 50), (140, 255, 255)],
     "green": [(40, 50, 50), (85, 255, 255)],
+    "yellow": [(20, 70, 70), (35, 255, 255)],
     "orange": [(10, 100, 100), (25, 255, 255)],
-    "black": [(0, 0, 0), (180, 50, 40)]  # Tightened black range
+    "black": [(0, 0, 0), (180, 50, 40)],
+    "white": [(0, 0, 200), (180, 30, 255)]  # Added white range
 }
 
 def detect_color(cell):
     # Apply Gaussian blur to reduce noise
-    cell = cv2.GaussianBlur(cell, (5,5), 0)
+    cell = cv2.GaussianBlur(cell, (5, 5), 0)
     
     # Convert to HSV
     hsv = cv2.cvtColor(cell, cv2.COLOR_BGR2HSV)
     
+    # Calculate the average saturation and value of the cell
+    avg_sat = np.mean(hsv[:, :, 1])
+    avg_val = np.mean(hsv[:, :, 2])
+    
+    # If average saturation is low and value is high, classify as white
+    if avg_sat < 20 and avg_val > 220:
+        return "white"
+    
     # Initialize a mask to keep track of assigned pixels
     mask_assigned = np.zeros_like(hsv[:, :, 0], dtype=np.uint8)
     
-    # Color priority list
+    # Color priority list (without white)
     color_priority = [
         ('red', HSV_COLOR_RANGES["red"]),
         ('purple', HSV_COLOR_RANGES["purple"]),
         ('blue', HSV_COLOR_RANGES["blue"]),
         ('green', HSV_COLOR_RANGES["green"]),
         ('yellow', HSV_COLOR_RANGES["yellow"]),
-        ('black', HSV_COLOR_RANGES["black"])
+        ('orange', HSV_COLOR_RANGES["orange"]),
+        ('black', HSV_COLOR_RANGES["black"])  # Black is checked last
     ]
     
     # Dictionary to hold pixel counts for each color
